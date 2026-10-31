@@ -23,6 +23,8 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+//for the add sys call
+int add(int, int);
 int hello(void);
 
 // ulib.c

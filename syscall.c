@@ -103,6 +103,8 @@ extern int sys_unlink(void);
 extern int sys_wait(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
+//adding a line for the add syscall
+extern int sys_add(void);
 extern int sys_hello(void);
 
 static int (*syscalls[])(void) = {
@@ -127,6 +129,8 @@ static int (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+//added an entry for the add syscall
+[SYS_add] sys_add,
 [SYS_hello]   sys_hello,
 };
 

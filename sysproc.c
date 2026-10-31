@@ -95,3 +95,13 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+//adding the defn of thew add syscall
+int 
+sys_add(void){
+  int a,b;
+  if(argint(0,&a)<0 || argint(1,&b)<0){
+    return -1;
+  }
+  return a+b;
+}
