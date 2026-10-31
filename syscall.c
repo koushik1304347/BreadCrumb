@@ -106,6 +106,9 @@ extern int sys_uptime(void);
 //adding a line for the add syscall
 extern int sys_add(void);
 extern int sys_hello(void);
+extern int sys_xbegin(void);
+extern int sys_xcommit(void);
+extern int sys_xabort(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -132,6 +135,9 @@ static int (*syscalls[])(void) = {
 //added an entry for the add syscall
 [SYS_add] sys_add,
 [SYS_hello]   sys_hello,
+[SYS_xbegin]  sys_xbegin,
+[SYS_xcommit] sys_xcommit,
+[SYS_xabort]  sys_xabort,
 };
 
 void

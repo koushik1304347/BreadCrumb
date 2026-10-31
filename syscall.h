@@ -23,3 +23,6 @@
 //defining a new sys call number for adding 2 numbers
 #define SYS_add    22
 #define SYS_hello  23
+#define SYS_xbegin 24
+#define SYS_xcommit 25
+#define SYS_xabort 26

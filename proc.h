@@ -1,3 +1,5 @@
+#include "spinlock.h"
+
 // Per-CPU state
 struct cpu {
   uchar apicid;                // Local APIC ID
@@ -34,6 +36,21 @@ struct context {
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+enum specstate { SPEC_FREE, SPEC_ACTIVE, SPEC_COMMITTING, SPEC_ABORTING };
+
+// Metadata is protected by ptable.lock. resources is protected by resource_lock.
+// A pointer returned by either spec_pin() or spec_pin_cleanup() remains valid
+// until the matching spec_unpin().
+struct spec_context {
+  int id;
+  int owner_pid;
+  enum specstate state;
+  int members;
+  uint refs;
+  struct spinlock resource_lock;
+  void *resources;
+};
+
 // Per-process state
 struct proc {
   uint sz;                     // Size of process memory (bytes)
@@ -46,6 +63,7 @@ struct proc {
   struct context *context;     // swtch() here to run process
   void *chan;                  // If non-zero, sleeping on chan
   int killed;                  // If non-zero, have been killed
+  int spec;                    // Shared speculation ID, or 0 if not a participant
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)

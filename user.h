@@ -26,6 +26,9 @@ int uptime(void);
 //for the add sys call
 int add(int, int);
 int hello(void);
+int xbegin(void);
+int xcommit(void);
+int xabort(void);
 
 // ulib.c
 int stat(const char*, struct stat*);
