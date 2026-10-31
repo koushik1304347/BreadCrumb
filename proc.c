@@ -12,6 +12,14 @@ struct {
   struct proc proc[NPROC];
 } ptable;
 
+// ptable.lock also protects this table and every proc.spec field.  Keeping
+// membership and context state under one lock makes fork admission, completion,
+// cancellation, and exit detachment atomic with respect to one another.
+static struct spec_context spectable[NSPEC];
+static uint nextspecid = 1;
+
+static void spec_context_free_locked(struct spec_context *sc);
+
 static struct proc *initproc;
 
 int nextpid = 1;
@@ -20,10 +28,227 @@ extern void trapret(void);
 
 static void wakeup1(void *chan);
 
+static struct spec_context*
+spec_lookup_locked(int id)
+{
+  struct spec_context *sc;
+  for(sc = spectable; sc < &spectable[NSPEC]; sc++)
+    if(sc->state != SPEC_FREE && sc->id == id)
+      return sc;
+  return 0;
+}
+
+static struct spec_context*
+spec_pin_state(int id, int cleanup)
+{
+  struct spec_context *sc;
+
+  acquire(&ptable.lock);
+  sc = spec_lookup_locked(id);
+  if(sc == 0 || (sc->state != SPEC_ACTIVE &&
+     !(cleanup && sc->state == SPEC_ABORTING)))
+    sc = 0;
+  else
+    sc->refs++;
+  release(&ptable.lock);
+  return sc;
+}
+
+// Pin an active context before using resources outside ptable.lock. The
+// returned pointer must be paired with spec_unpin(); the reference prevents
+// slot reuse while a caller may sleep or take resource_lock.
+struct spec_context*
+spec_pin(int id)
+{
+  return spec_pin_state(id, 0);
+}
+
+// Cleanup-only pin for member exit and abort discard after cancellation has
+// closed admission to new speculative work.
+struct spec_context*
+spec_pin_cleanup(int id)
+{
+  return spec_pin_state(id, 1);
+}
+
+void
+spec_unpin(struct spec_context *sc)
+{
+  acquire(&ptable.lock);
+  if(sc->state == SPEC_FREE || sc->refs <= (uint)sc->members)
+    panic("spec unpin invariant");
+  sc->refs--;
+  if(sc->members == 0 && sc->refs == 0)
+    spec_context_free_locked(sc);
+  release(&ptable.lock);
+}
+
+static int
+spec_id_in_use_locked(int id)
+{
+  return spec_lookup_locked(id) != 0;
+}
+
+// At most NSPEC identities are live, so a bounded scan finds a free positive
+// identity without ever reusing one still held by a context/reference.
+static int
+spec_new_id_locked(void)
+{
+  uint id;
+  int tries;
+
+  for(tries = 0; tries <= NSPEC; tries++){
+    id = nextspecid;
+    if(id == 0 || id > 0x7fffffffU)
+      id = 1;
+    nextspecid = id + 1;
+    if(!spec_id_in_use_locked(id))
+      return id;
+  }
+  return 0;
+}
+
+static void
+spec_context_free_locked(struct spec_context *sc)
+{
+  if(sc->members != 0 || sc->refs != 0)
+    panic("spec context still referenced");
+  if(sc->resources != 0)
+    panic("spec resources still attached");
+  sc->id = 0;
+  sc->owner_pid = 0;
+  sc->state = SPEC_FREE;
+  sc->members = 0;
+  sc->refs = 0;
+  sc->resources = 0;
+}
+
+static void
+spec_detach_locked(struct proc *p)
+{
+  struct spec_context *sc;
+
+  if(p->spec == 0)
+    return;
+  sc = spec_lookup_locked(p->spec);
+  if(sc == 0 || sc->members < 1 || sc->refs < 1)
+    panic("spec detach invariant");
+  p->spec = 0;
+  sc->members--;
+  sc->refs--;
+  if(sc->members == 0 && sc->refs == 0)
+    spec_context_free_locked(sc);
+}
+
+// Caller holds ptable.lock.  Killing is cooperative: a process in the kernel
+// notices killed on syscall/trap return, and sleepers are made runnable here.
+static void
+spec_cancel_locked(struct spec_context *sc)
+{
+  struct proc *p;
+
+  if(sc->state == SPEC_FREE || sc->state == SPEC_COMMITTING)
+    return;
+  sc->state = SPEC_ABORTING;
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->spec != sc->id)
+      continue;
+    p->killed = 1;
+    if(p->state == SLEEPING)
+      p->state = RUNNABLE;
+  }
+}
+
+// These locked hooks only reserve the lifecycle transition. They must not sleep
+// or acquire resource_lock. Later resource work must use a pinned reference
+// outside ptable.lock, then revalidate/finalize under ptable.lock.
+static void
+spec_commit_context_locked(struct spec_context *sc)
+{
+  sc->state = SPEC_COMMITTING;
+}
+
+static void
+spec_abort_context_locked(struct spec_context *sc)
+{
+  sc->state = SPEC_ABORTING;
+}
+
+int
+spec_begin(void)
+{
+  int id;
+  struct proc *p = myproc();
+  struct spec_context *sc;
+
+  acquire(&ptable.lock);
+  if(p->spec != 0 || p->killed){
+    release(&ptable.lock);
+    return -1;
+  }
+  for(sc = spectable; sc < &spectable[NSPEC]; sc++)
+    if(sc->state == SPEC_FREE)
+      break;
+  if(sc == &spectable[NSPEC] || (id = spec_new_id_locked()) == 0){
+    release(&ptable.lock);
+    return -1;
+  }
+  sc->id = id;
+  sc->owner_pid = p->pid;
+  sc->state = SPEC_ACTIVE;
+  sc->members = 1;
+  sc->refs = 1;
+  sc->resources = 0;
+  p->spec = id;
+  release(&ptable.lock);
+  return 0;
+}
+
+static int
+spec_complete(int commit)
+{
+  struct proc *p = myproc();
+  struct spec_context *sc;
+
+  acquire(&ptable.lock);
+  if(p->spec == 0 || p->killed){
+    release(&ptable.lock);
+    return -1;
+  }
+  sc = spec_lookup_locked(p->spec);
+  if(sc == 0 || sc->state != SPEC_ACTIVE || sc->owner_pid != p->pid ||
+     sc->members != 1 || sc->refs != 1){
+    release(&ptable.lock);
+    return -1;
+  }
+  if(commit)
+    spec_commit_context_locked(sc);
+  else
+    spec_abort_context_locked(sc);
+  spec_detach_locked(p);
+  release(&ptable.lock);
+  return 0;
+}
+
+int
+spec_commit(void)
+{
+  return spec_complete(1);
+}
+
+int
+spec_abort(void)
+{
+  return spec_complete(0);
+}
+
 void
 pinit(void)
 {
+  int i;
   initlock(&ptable.lock, "ptable");
+  for(i = 0; i < NSPEC; i++)
+    initlock(&spectable[i].resource_lock, "spec-resource");
 }
 
 // Must be called with interrupts disabled
@@ -88,12 +313,26 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->parent = 0;
+  p->pgdir = 0;
+  p->kstack = 0;
+  p->tf = 0;
+  p->context = 0;
+  p->chan = 0;
+  p->killed = 0;
+  p->spec = 0;
+  p->cwd = 0;
+  p->name[0] = 0;
+  memset(p->ofile, 0, sizeof(p->ofile));
 
   release(&ptable.lock);
 
   // Allocate kernel stack.
   if((p->kstack = kalloc()) == 0){
+    acquire(&ptable.lock);
+    p->pid = 0;
     p->state = UNUSED;
+    release(&ptable.lock);
     return 0;
   }
   sp = p->kstack + KSTACKSIZE;
@@ -113,6 +352,47 @@ found:
   p->context->eip = (uint)forkret;
 
   return p;
+}
+
+// Free a process that has not yet been admitted to the runnable set.
+// The slot stays EMBRYO while cleanup that may sleep or acquire other locks
+// runs, and is made reusable only after all resources have been released.
+static void
+free_embryo(struct proc *p)
+{
+  int fd;
+
+  for(fd = 0; fd < NOFILE; fd++){
+    if(p->ofile[fd]){
+      fileclose(p->ofile[fd]);
+      p->ofile[fd] = 0;
+    }
+  }
+  if(p->cwd){
+    begin_op();
+    iput(p->cwd);
+    end_op();
+    p->cwd = 0;
+  }
+  if(p->pgdir){
+    freevm(p->pgdir);
+    p->pgdir = 0;
+  }
+  if(p->kstack){
+    kfree(p->kstack);
+    p->kstack = 0;
+  }
+  acquire(&ptable.lock);
+  p->spec = 0;
+  p->pid = 0;
+  p->parent = 0;
+  p->tf = 0;
+  p->context = 0;
+  p->chan = 0;
+  p->killed = 0;
+  p->name[0] = 0;
+  p->state = UNUSED;
+  release(&ptable.lock);
 }
 
 //PAGEBREAK: 32
@@ -191,9 +471,7 @@ fork(void)
 
   // Copy process state from proc.
   if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
-    kfree(np->kstack);
-    np->kstack = 0;
-    np->state = UNUSED;
+    free_embryo(np);
     return -1;
   }
   np->sz = curproc->sz;
@@ -214,6 +492,22 @@ fork(void)
 
   acquire(&ptable.lock);
 
+  // Admission and cancellation use the same lock. A child is either counted
+  // before it can run, or not admitted at all.
+  if(curproc->killed || (curproc->spec != 0 &&
+     (spec_lookup_locked(curproc->spec) == 0 ||
+      spec_lookup_locked(curproc->spec)->state != SPEC_ACTIVE))){
+    release(&ptable.lock);
+    free_embryo(np);
+    return -1;
+  }
+  if(curproc->spec != 0){
+    struct spec_context *sc = spec_lookup_locked(curproc->spec);
+    np->spec = sc->id;
+    sc->members++;
+    sc->refs++;
+  }
+
   np->state = RUNNABLE;
 
   release(&ptable.lock);
@@ -229,10 +523,24 @@ exit(void)
 {
   struct proc *curproc = myproc();
   struct proc *p;
+  struct spec_context *sc;
   int fd;
 
   if(curproc == initproc)
     panic("init exiting");
+
+  // Owner cancellation starts before exit resource cleanup. The association
+  // remains attached while descriptors/cwd are released so future private
+  // resources can be detached or discarded in the correct context.
+  acquire(&ptable.lock);
+  if(curproc->spec != 0){
+    sc = spec_lookup_locked(curproc->spec);
+    if(sc == 0)
+      panic("spec owner exit missing context");
+    if(sc->owner_pid == curproc->pid && sc->state == SPEC_ACTIVE)
+      spec_cancel_locked(sc);
+  }
+  release(&ptable.lock);
 
   // Close all open files.
   for(fd = 0; fd < NOFILE; fd++){
@@ -251,6 +559,10 @@ exit(void)
 
   // Parent might be sleeping in wait().
   wakeup1(curproc->parent);
+
+  // Membership ends after this process's ordinary exit cleanup, before it
+  // becomes a zombie. Thus an unreaped zombie cannot block owner completion.
+  spec_detach_locked(curproc);
 
   // Pass abandoned children to init.
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -294,6 +606,7 @@ wait(void)
         p->parent = 0;
         p->name[0] = 0;
         p->killed = 0;
+        p->spec = 0;
         p->state = UNUSED;
         release(&ptable.lock);
         return pid;
@@ -480,11 +793,17 @@ int
 kill(int pid)
 {
   struct proc *p;
+  struct spec_context *sc;
 
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->pid == pid){
       p->killed = 1;
+      if(p->spec != 0){
+        sc = spec_lookup_locked(p->spec);
+        if(sc && sc->owner_pid == p->pid)
+          spec_cancel_locked(sc);
+      }
       // Wake process from sleep if necessary.
       if(p->state == SLEEPING)
         p->state = RUNNABLE;

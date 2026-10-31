@@ -82,6 +82,24 @@ sys_hello(void){
   return 0;
 }
 
+int
+sys_xbegin(void)
+{
+  return spec_begin();
+}
+
+int
+sys_xcommit(void)
+{
+  return spec_commit();
+}
+
+int
+sys_xabort(void)
+{
+  return spec_abort();
+}
+
 
 // return how many clock tick interrupts have occurred
 // since start.
