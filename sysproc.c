@@ -76,6 +76,12 @@ sys_sleep(void)
   release(&tickslock);
   return 0;
 }
+int
+sys_hello(void){
+  cprintf("surprise motherfucker\n");
+  return 0;
+}
+
 
 // return how many clock tick interrupts have occurred
 // since start.

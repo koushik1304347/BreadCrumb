@@ -22,3 +22,4 @@
 #define SYS_close  21
 //defining a new sys call number for adding 2 numbers
 #define SYS_add    22
+#define SYS_hello  23
