@@ -115,6 +115,7 @@ int             spec_abort(void);
 struct spec_context* spec_pin(int);
 struct spec_context* spec_pin_cleanup(int);
 void            spec_unpin(struct spec_context*);
+int             spec_wait(struct spec_context*, void*, struct spinlock*);
 struct cpu*     mycpu(void);
 struct proc*    myproc();
 void            pinit(void);
@@ -127,6 +128,15 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
+
+// shadow.c: kernel buffers only; caller holds no cache buffer or spinlock.
+int             shadow_read(int, uint, uint, uint, void*, uint);
+int             shadow_write(int, uint, uint, uint, const void*, uint);
+int             shadow_count(struct spec_context*);
+void            shadow_discard(struct spec_context*);
+#ifdef SHADOW_TEST
+int             shadow_test(int, int, int);
+#endif
 
 // swtch.S
 void            swtch(struct context**, struct context*);

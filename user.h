@@ -29,6 +29,9 @@ int hello(void);
 int xbegin(void);
 int xcommit(void);
 int xabort(void);
+#ifdef SHADOW_TEST
+int shadowtest(int, int, int);
+#endif
 
 // ulib.c
 int stat(const char*, struct stat*);

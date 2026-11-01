@@ -78,7 +78,7 @@ sys_sleep(void)
 }
 int
 sys_hello(void){
-  cprintf("surprise motherfucker\n");
+  cprintf("surprise\n");
   return 0;
 }
 
@@ -99,6 +99,17 @@ sys_xabort(void)
 {
   return spec_abort();
 }
+
+#ifdef SHADOW_TEST
+int
+sys_shadowtest(void)
+{
+  int op, slot, value;
+  if(argint(0, &op) < 0 || argint(1, &slot) < 0 || argint(2, &value) < 0)
+    return -1;
+  return shadow_test(op, slot, value);
+}
+#endif
 
 
 // return how many clock tick interrupts have occurred

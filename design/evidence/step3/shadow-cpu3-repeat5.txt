@@ -1,0 +1,361 @@
+xv6...
+cpu0: starting 0
+sb: size 1000 nblocks 941 ninodes 200 nlog 30 logstart 2 inodestart 32 bmap start 58
+init: starting sh
+$ shadowtest; echo TESTDONEff7a5454
+PASS: ordinary process cannot access private storage
+PASS: begin for private block tests
+PASS: missing shadow is distinct from error
+PASS: first copy preserves original bytes
+PASS: private update can be read back
+PASS: original cache block unchanged
+PASS: nonempty commit rejected without losing private work
+PASS: eight distinct blocks fit, including first-copy entry
+PASS: ninth block fails without corrupting existing entries
+PASS: repeated block update reuses entry at full capacity
+PASS: test interface rejects invalid block slots
+PASS: abort frees all shadow pages
+PASS: all original blocks unchanged after abort
+PASS: begin allocation-failure test
+PASS: allocation failure leaves no reservation or page leak
+PASS: allocation succeeds on retry after injected failure
+PASS: abort after allocation retry
+PASS: begin shared-context test
+PASS: parent reads child's private update
+PASS: cannot discard storage while a child is alive
+PASS: child reads parent's private update
+PASS: member exit retains shared shadow contents
+PASS: shared storage reclaimed once
+PASS: independent contexts shadow the same original block
+PASS: one context abort does not affect another context
+PASS: independent storage reclaimed
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: loader publishes initialized private contents
+PASS: waiting member uses READY contents
+PASS: reservation race leaves no duplicate entries or leaked pages
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: killed LOADING waiter exits without hanging
+PASS: loader publishes initialized private contents
+PASS: reservation race leaves no duplicate entries or leaked pages
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: loader publishes initialized private contents
+PASS: waiting member uses READY contents
+PASS: competing writer reuses the published entry
+PASS: reservation race leaves no duplicate entries or leaked pages
+zombie!
+zombPASS: owner-death setup has an in-flight loaderie!
+ and waiter
+PASS: owner exit cancels loader/waiter and reclaims pages
+PASS: new speculation sees no stale private contents
+PASS: owner-death setup has an in-flight loader and waiter
+zombie!
+PASS: killed owner cancelszombie!
+ loader/waiter and reclaims pages
+PASS: new speculation sees no stale private contents
+PASS: 100 allocate/abort cycles reuse contexts without page leaks
+SHADOW TESTS PASSED
+TESTDONEff7a5454
+$ shadowtest; echo TESTDONE0d4f5946
+PASS: ordinary process cannot access private storage
+PASS: begin for private block tests
+PASS: missing shadow is distinct from error
+PASS: first copy preserves original bytes
+PASS: private update can be read back
+PASS: original cache block unchanged
+PASS: nonempty commit rejected without losing private work
+PASS: eight distinct blocks fit, including first-copy entry
+PASS: ninth block fails without corrupting existing entries
+PASS: repeated block update reuses entry at full capacity
+PASS: test interface rejects invalid block slots
+PASS: abort frees all shadow pages
+PASS: all original blocks unchanged after abort
+PASS: begin allocation-failure test
+PASS: allocation failure leaves no reservation or page leak
+PASS: allocation succeeds on retry after injected failure
+PASS: abort after allocation retry
+PASS: begin shared-context test
+PASS: parent reads child's private update
+PASS: cannot discard storage while a child is alive
+PASS: child reads parent's private update
+PASS: member exit retains shared shadow contents
+PASS: shared storage reclaimed once
+PASS: independent contexts shadow the same original block
+PASS: one context abort does not affect another context
+PASS: independent storage reclaimed
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: loader publishes initialized private contents
+PASS: waiting member uses READY contents
+PASS: reservation race leaves no duplicate entries or leaked pages
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: killed LOADING waiter exits without hanging
+PASS: loader publishes initialized private contents
+PASS: reservation race leaves no duplicate entries or leaked pages
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: loader publishes initialized private contents
+PASS: waiting member uses READY contents
+PASS: competing writer reuses the published entry
+PASS: reservation race leaves no duplicate entries or leaked pages
+zombie!
+PASS: owner-death setuzombie!
+p has an in-flight loader and waiter
+PASS: owner exit cancels loader/waiter and reclaims pages
+PASS: new speculation sees no stale private contents
+PASS: owner-death setup has an in-flight loader and waiter
+zombie!
+zombie!
+PASS: killed owner cancels loader/waiter and reclaims pages
+PASS: new speculation sees no stale private contents
+PASS: 100 allocate/abort cycles reuse contexts without page leaks
+SHADOW TESTS PASSED
+TESTDONE0d4f5946
+$ shadowtest; echo TESTDONE7e74a0d9
+PASS: ordinary process cannot access private storage
+PASS: begin for private block tests
+PASS: missing shadow is distinct from error
+PASS: first copy preserves original bytes
+PASS: private update can be read back
+PASS: original cache block unchanged
+PASS: nonempty commit rejected without losing private work
+PASS: eight distinct blocks fit, including first-copy entry
+PASS: ninth block fails without corrupting existing entries
+PASS: repeated block update reuses entry at full capacity
+PASS: test interface rejects invalid block slots
+PASS: abort frees all shadow pages
+PASS: all original blocks unchanged after abort
+PASS: begin allocation-failure test
+PASS: allocation failure leaves no reservation or page leak
+PASS: allocation succeeds on retry after injected failure
+PASS: abort after allocation retry
+PASS: begin shared-context test
+PASS: parent reads child's private update
+PASS: cannot discard storage while a child is alive
+PASS: child reads parent's private update
+PASS: member exit retains shared shadow contents
+PASS: shared storage reclaimed once
+PASS: independent contexts shadow the same original block
+PASS: one context abort does not affect another context
+PASS: independent storage reclaimed
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: loader publishes initialized private contents
+PASS: waiting member uses READY contents
+PASS: reservation race leaves no duplicate entries or leaked pages
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: killed LOADING waiter exits without hanging
+PASS: loader publishes initialized private contents
+PASS: reservation race leaves no duplicate entries or leaked pages
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: loader publishes initialized private contents
+PASS: waiting member uses READY contents
+PASS: competing writer reuses the published entry
+PASS: reservation race leaves no duplicate entries or leaked pages
+zombie!
+zoPASS: owner-death setup has an in-flight mbie!
+loader and waiter
+PASS: owner exit cancels loader/waiter and reclaims pages
+PASS: new speculation sees no stale private contents
+PASS: owner-death setup has an in-flight loader and waiter
+zombie!
+PASS: killed owner cancels zombie!
+loader/waiter and reclaims pages
+PASS: new speculation sees no stale private contents
+PASS: 100 allocate/abort cycles reuse contexts without page leaks
+SHADOW TESTS PASSED
+TESTDONE7e74a0d9
+$ shadowtest; echo TESTDONEa2cc7313
+PASS: ordinary process cannot access private storage
+PASS: begin for private block tests
+PASS: missing shadow is distinct from error
+PASS: first copy preserves original bytes
+PASS: private update can be read back
+PASS: original cache block unchanged
+PASS: nonempty commit rejected without losing private work
+PASS: eight distinct blocks fit, including first-copy entry
+PASS: ninth block fails without corrupting existing entries
+PASS: repeated block update reuses entry at full capacity
+PASS: test interface rejects invalid block slots
+PASS: abort frees all shadow pages
+PASS: all original blocks unchanged after abort
+PASS: begin allocation-failure test
+PASS: allocation failure leaves no reservation or page leak
+PASS: allocation succeeds on retry after injected failure
+PASS: abort after allocation retry
+PASS: begin shared-context test
+PASS: parent reads child's private update
+PASS: cannot discard storage while a child is alive
+PASS: child reads parent's private update
+PASS: member exit retains shared shadow contents
+PASS: shared storage reclaimed once
+PASS: independent contexts shadow the same original block
+PASS: one context abort does not affect another context
+PASS: independent storage reclaimed
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: loader publishes initialized private contents
+PASS: waiting member uses READY contents
+PASS: reservation race leaves no duplicate entries or leaked pages
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: killed LOADING waiter exits without hanging
+PASS: loader publishes initialized private contents
+PASS: reservation race leaves no duplicate entries or leaked pages
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: loader publishes initialized private contents
+PASS: waiting member uses READY contents
+PASS: competing writer reuses the published entry
+PASS: reservation race leaves no duplicate entries or leaked pages
+zombie!
+zombiPASS: owner-death setup has an in-flight loader and waiter
+PASS: owner exit cancels loader/waiter and reclaimse!
+ pages
+PASS: new speculation sees no stale private contents
+PASS: owner-death setup has an in-flight loader and waiter
+zombie!
+PASS: killed owner canzombie!
+cels loader/waiter and reclaims pages
+PASS: new speculation sees no stale private contents
+PASS: 100 allocate/abort cycles reuse contexts without page leaks
+SHADOW TESTS PASSED
+TESTDONEa2cc7313
+$ shadowtest; echo TESTDONEac8f194a
+PASS: ordinary process cannot access private storage
+PASS: begin for private block tests
+PASS: missing shadow is distinct from error
+PASS: first copy preserves original bytes
+PASS: private update can be read back
+PASS: original cache block unchanged
+PASS: nonempty commit rejected without losing private work
+PASS: eight distinct blocks fit, including first-copy entry
+PASS: ninth block fails without corrupting existing entries
+PASS: repeated block update reuses entry at full capacity
+PASS: test interface rejects invalid block slots
+PASS: abort frees all shadow pages
+PASS: all original blocks unchanged after abort
+PASS: begin allocation-failure test
+PASS: allocation failure leaves no reservation or page leak
+PASS: allocation succeeds on retry after injected failure
+PASS: abort after allocation retry
+PASS: begin shared-context test
+PASS: parent reads child's private update
+PASS: cannot discard storage while a child is alive
+PASS: child reads parent's private update
+PASS: member exit retains shared shadow contents
+PASS: shared storage reclaimed once
+PASS: independent contexts shadow the same original block
+PASS: one context abort does not affect another context
+PASS: independent storage reclaimed
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: loader publishes initialized private contents
+PASS: waiting member uses READY contents
+PASS: reservation race leaves no duplicate entries or leaked pages
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: killed LOADING waiter exits without hanging
+PASS: loader publishes initialized private contents
+PASS: reservation race leaves no duplicate entries or leaked pages
+PASS: begin LOADING reservation test
+PASS: loader reserves entry before reading disk
+PASS: second member waits for LOADING entry
+PASS: concurrent lookup has one reservation and one allocated page
+PASS: loader publishes initialized private contents
+PASS: waiting member uses READY contents
+PASS: competing writer reuses the published entry
+PASS: reservation race leaves no duplicate entries or leaked pages
+zombie!
+zombie!
+PASS: owner-death setup has an in-flight loader and waiter
+PASS: owner exit cancels loader/waiter and reclaims pages
+PASS: new speculation sees no stale private contents
+PASS: owner-death setup has an in-flight loader and waiter
+zombie!
+PASS: killed owner cancels loader/waiter and zombie!
+reclaims pages
+PASS: new speculation sees no stale private contents
+PASS: 100 allocate/abort cycles reuse contexts without page leaks
+SHADOW TESTS PASSED
+TESTDONEac8f194a
+$ spectest; echo TESTDONE6b4786dc
+PASS: completion outside speculation is rejected
+PASS: begin succeeds
+PASS: nested begin is rejected
+PASS: owner abort succeeds
+PASS: second completion is rejected
+PASS: a completed process can begin and commit again
+PASS: shared-membership owner begins
+PASS: inherited child rejects nested begin and completion
+PASS: owner abort is refused while child lives
+PASS: owner cannot complete while child lives
+PASS: fork inheritance shares one context until child detaches
+PASS: exec-membership owner begins
+PASS: exec preserves inherited non-owner membership
+PASS: exec'd member remains counted until exit
+PASS: owner completes after exec'd member detaches
+PASS: unreaped-zombie owner begins
+PASS: detached zombie no longer counts before wait reaps it
+PASS: unreaped zombie remains waitable
+PASS: member-kill owner begins
+PASS: ordinary member can be killed
+PASS: killed non-owner detaches without cancelling owner
+PASS: grandchild owner begins
+PASS: living grandchild still counts after its parent exits
+PASS: grandchild can be cancelled by pid
+PASS: ownezombie!
+r completes after grandchild detaches
+zombie!
+PASS: owner exits voluntarily
+PASS: owner exit wakes and terminates sleeping member
+PASS: owner kill request succeeds
+zombie!
+PASS: killed owner exits
+PASS: owner kill wakes and terminates sleeping member
+PASS: all bounded context slots can be allocated
+PASS: begin fails cleanly when context table is full
+PASS: cancelled contexts are reclaimed and reusable
+PASS: fork-failure owner begins
+PASS: fork failure is reached under process/resource pressure
+PASS: failed fork and child exits leave no leaked membership references
+PASS: repeated begin/complete and process-slot reuse
+PASS: ordinary-effects example begins
+PASS: lifecycle abort succeeds
+PASS: ordinary file write remains visible after xabort (expected Step 2)
+SPEC TESTS PASSED
+TESTDONE6b4786dc
+$ 

@@ -45,7 +45,7 @@ spec_pin_state(int id, int cleanup)
 
   acquire(&ptable.lock);
   sc = spec_lookup_locked(id);
-  if(sc == 0 || (sc->state != SPEC_ACTIVE &&
+  if(sc == 0 || sc->members == 0 || (sc->state != SPEC_ACTIVE &&
      !(cleanup && sc->state == SPEC_ABORTING)))
     sc = 0;
   else
@@ -71,16 +71,35 @@ spec_pin_cleanup(int id)
   return spec_pin_state(id, 1);
 }
 
+// Keep one exclusive reclaimer reference until resource freeing is finished.
+// Nobody may pin a zero-member context. No ptable lock is held during freeing.
+static void
+spec_reclaim(struct spec_context *sc)
+{
+  shadow_discard(sc);
+  acquire(&ptable.lock);
+  if(sc->members != 0 || sc->refs != 1)
+    panic("spec reclaim invariant");
+  sc->refs = 0;
+  spec_context_free_locked(sc);
+  release(&ptable.lock);
+}
+
 void
 spec_unpin(struct spec_context *sc)
 {
+  int reclaim = 0;
   acquire(&ptable.lock);
   if(sc->state == SPEC_FREE || sc->refs <= (uint)sc->members)
     panic("spec unpin invariant");
   sc->refs--;
-  if(sc->members == 0 && sc->refs == 0)
-    spec_context_free_locked(sc);
+  if(sc->members == 0 && sc->refs == 0){
+    sc->refs = 1;
+    reclaim = 1;
+  }
   release(&ptable.lock);
+  if(reclaim)
+    spec_reclaim(sc);
 }
 
 static int
@@ -123,21 +142,24 @@ spec_context_free_locked(struct spec_context *sc)
   sc->resources = 0;
 }
 
-static void
+static struct spec_context*
 spec_detach_locked(struct proc *p)
 {
   struct spec_context *sc;
 
   if(p->spec == 0)
-    return;
+    return 0;
   sc = spec_lookup_locked(p->spec);
   if(sc == 0 || sc->members < 1 || sc->refs < 1)
     panic("spec detach invariant");
   p->spec = 0;
   sc->members--;
   sc->refs--;
-  if(sc->members == 0 && sc->refs == 0)
-    spec_context_free_locked(sc);
+  if(sc->members == 0 && sc->refs == 0){
+    sc->refs = 1;
+    return sc;
+  }
+  return 0;
 }
 
 // Caller holds ptable.lock.  Killing is cooperative: a process in the kernel
@@ -185,7 +207,7 @@ spec_begin(void)
   if(p->spec != 0 || p->killed){
     release(&ptable.lock);
     return -1;
-  }
+  }//does not allow the process to create a speculation if it has ended or is already part of a speculation
   for(sc = spectable; sc < &spectable[NSPEC]; sc++)
     if(sc->state == SPEC_FREE)
       break;
@@ -225,9 +247,52 @@ spec_complete(int commit)
     spec_commit_context_locked(sc);
   else
     spec_abort_context_locked(sc);
+  sc->refs++;  // exclusive completion reference across unlocked resource work
+  release(&ptable.lock);
+
+  // Step 3 cannot publish private blocks. Do not silently discard them and
+  // report a successful commit. Keep the attempt available for xabort instead.
+  if(commit && shadow_count(sc) != 0){
+    acquire(&ptable.lock);
+    sc->state = SPEC_ACTIVE;
+    if(p->killed)
+      spec_cancel_locked(sc);
+    release(&ptable.lock);
+    spec_unpin(sc);
+    return -1;
+  }
+  shadow_discard(sc);
+  acquire(&ptable.lock);
   spec_detach_locked(p);
   release(&ptable.lock);
+  spec_unpin(sc);
   return 0;
+}
+
+// Like sleep(chan, resource_lock), but cancellation/killed checks and sleeping
+// are one atomic ptable operation. This prevents kill just-before-sleep from
+// stranding a LOADING waiter. The normal xv6 sleep lock handoff is the sole
+// resource_lock -> ptable.lock nesting exception; no reverse nesting is allowed.
+int
+spec_wait(struct spec_context *sc, void *chan, struct spinlock *lk)
+{
+  struct proc *p = myproc();
+  int ok;
+
+  if(lk != &sc->resource_lock || !holding(lk))
+    panic("spec wait lock");
+  acquire(&ptable.lock);
+  release(lk);
+  if(sc->state == SPEC_ACTIVE && !p->killed){
+    p->chan = chan;
+    p->state = SLEEPING;
+    sched();
+    p->chan = 0;
+  }
+  ok = sc->state == SPEC_ACTIVE && !p->killed;
+  release(&ptable.lock);
+  acquire(lk);
+  return ok ? 0 : -1;
 }
 
 int
@@ -555,14 +620,18 @@ exit(void)
   end_op();
   curproc->cwd = 0;
 
+  // Detach/reclaim before zombie publication. Resource freeing is outside
+  // ptable.lock; other pinned members keep shared shadows alive until safe.
+  acquire(&ptable.lock);
+  sc = spec_detach_locked(curproc);
+  release(&ptable.lock);
+  if(sc)
+    spec_reclaim(sc);
+
   acquire(&ptable.lock);
 
   // Parent might be sleeping in wait().
   wakeup1(curproc->parent);
-
-  // Membership ends after this process's ordinary exit cleanup, before it
-  // becomes a zombie. Thus an unreaped zombie cannot block owner completion.
-  spec_detach_locked(curproc);
 
   // Pass abandoned children to init.
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
