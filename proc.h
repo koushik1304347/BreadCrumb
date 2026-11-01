@@ -48,7 +48,7 @@ struct spec_context {
   int members;
   uint refs;
   struct spinlock resource_lock;
-  void *resources;
+  void *resources;              // linked shadow entries, owned by shadow.c
 };
 
 // Per-process state

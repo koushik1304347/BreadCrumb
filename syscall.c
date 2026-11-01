@@ -109,6 +109,9 @@ extern int sys_hello(void);
 extern int sys_xbegin(void);
 extern int sys_xcommit(void);
 extern int sys_xabort(void);
+#ifdef SHADOW_TEST
+extern int sys_shadowtest(void);
+#endif
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -138,6 +141,9 @@ static int (*syscalls[])(void) = {
 [SYS_xbegin]  sys_xbegin,
 [SYS_xcommit] sys_xcommit,
 [SYS_xabort]  sys_xabort,
+#ifdef SHADOW_TEST
+[SYS_shadowtest] sys_shadowtest,
+#endif
 };
 
 void

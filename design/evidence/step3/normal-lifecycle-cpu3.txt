@@ -1,0 +1,62 @@
+xv6...
+cpu0: starting 0
+sb: size 1000 nblocks 941 ninodes 200 nlog 30 logstart 2 inodestart 32 bmap start 58
+init: starting sh
+$ spectest; echo TESTDONEbce9ae8d
+PASS: completion outside speculation is rejected
+PASS: begin succeeds
+PASS: nested begin is rejected
+PASS: owner abort succeeds
+PASS: second completion is rejected
+PASS: a completed process can begin and commit again
+PASS: shared-membership owner begins
+PASS: inherited child rejects nested begin and completion
+PASS: owner abort is refused while child lives
+PASS: owner cannot complete while child lives
+PASS: fork inheritance shares one context until child detaches
+PASS: exec-membership owner begins
+PASS: exec preserves inherited non-owner membership
+PASS: exec'd member remains counted until exit
+PASS: owner completes after exec'd member detaches
+PASS: unreaped-zombie owner begins
+PASS: detached zombie no longer counts before wait reaps it
+PASS: unreaped zombie remains waitable
+PASS: member-kill owner begins
+PASS: ordinary member can be killed
+PASS: killed non-owner detaches without cancelling owner
+PASS: grandchild owner begins
+PASS: living grandchild still counts after its parent exits
+PASS: grandchild can be cancelled zombie!
+by pid
+PASS: owner completes after grandchild detaches
+zombie!
+PASS: owner exits voluntarily
+PASS: owner exit wakes and terminates sleeping member
+PASS: owner kill request succeeds
+zombie!
+PASS: killed owner exits
+PASS: owner kill wakes and terminates sleeping member
+PASS: all bounded context slots can be allocated
+PASS: begin fails cleanly when context table is full
+PASS: cancelled contexts are reclaimed and reusable
+PASS: fork-failure owner begins
+PASS: fork failure is reached under process/resource pressure
+PASS: failed fork and child exits leave no leaked membership references
+PASS: repeated begin/complete and process-slot reuse
+PASS: ordinary-effects example begins
+PASS: lifecycle abort succeeds
+PASS: ordinary file write remains visible after xabort (expected Step 2)
+SPEC TESTS PASSED
+TESTDONEbce9ae8d
+$ addtest; echo TESTDONE8cb73c4c
+add(3, 4) = 7
+add(-3, 4) = 1
+TESTDONE8cb73c4c
+$ hello_test; echo TESTDONEcc72198d
+surprise
+hello() returned 0
+TESTDONEcc72198d
+$ mytest; echo TESTDONEfe809dca
+Hey, I am trying xv6
+TESTDONEfe809dca
+$ 

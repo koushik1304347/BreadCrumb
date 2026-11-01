@@ -26,3 +26,6 @@
 #define SYS_xbegin 24
 #define SYS_xcommit 25
 #define SYS_xabort 26
+#ifdef SHADOW_TEST
+#define SYS_shadowtest 27
+#endif

@@ -1,0 +1,645 @@
+EXTERNALIZATION BARRIERS FOR SPECULATIVE PROCESSES
+Questions, explanations, and decisions before implementation
+Updated: 1 November 2026
+
+HOW TO READ THIS RECORD
+=======================
+This is a curated record of the project-design conversation, grouped by the
+implementation stage it prepared. User questions are quoted as written where
+reproduced. Assistant explanations are consolidated for readability; this is
+not a verbatim export of every chat message or tool result. It preserves the
+design alternatives, examples, decisions, and boundaries discussed.
+
+Git authentication, remote setup, access tokens, public keys, screenshots, tool
+output, and unrelated repository-administration exchanges are excluded. No
+private credentials are included. The accompanying summary.pdf remains a
+handoff document, rather than a replacement for this discussion history.
+
+Historical answers describe what was known at that point. Later implementation
+notes explicitly identify resolved details and clarifications. In particular,
+Step 3 now exists, but ordinary filesystem isolation still does not.
+
+
+BACKGROUND: AGENT SETUP AND PROJECT PURPOSE
+==========================================
+
+User's initial request:
+"there are three pdfs in this relating to the project instructions. i have
+already done the xv6 setup process as you can already see. my team's project's
+name is Externalization barriers for speculative processes. the frist step of
+the same is setting up the agent so we can later demosntrate different things
+we will be implementing as asked by the project. I dont have much time today,
+so, instead of an llm based agent, for now, i want a rule-based agent that gives
+different commands to xv6."
+
+Discussion and outcome:
+- Read the three instruction PDFs and the existing setup. PDF 1 refers to a
+  customized RISC-V tree in places; PDF 3 and the actual checkout use x86 xv6.
+- The user explicitly selected the existing x86 architecture and tree.
+- PDF 2 recommends rules first, structured tools, validation, a controlled
+  QEMU bridge, observations and logs, then an LLM later.
+- Implemented a host Python agent with list/read/first-sentence-summary tools,
+  a validator, disposable image copies, and a serial-console bridge.
+- Demo fixtures live inside guest /demo, not in a host directory shared with
+  xv6. The dummy repository is just a directory of text files, not guest Git.
+- An explicitly selected baseline creates/deletes/prints, then abandons the
+  attempt. Effects remain because no barrier/rollback exists yet.
+- A scripted injection scenario reads an inbox and then proposes deletion by
+  a predetermined vulnerable rule. Normal read/summarize does not follow it.
+- The agent is a frontend; final enforcement must work in the guest kernel for
+  programs invoking syscalls directly.
+
+User:
+"lets now move to a little theorising related to the project. How is prompt
+injection bad and how will externalisation barriers help?"
+
+Assistant explanation:
+An agent may confuse instructions embedded in untrusted file contents with the
+user's actual request. If it has tools, that confusion can cause deletion,
+unapproved writes, or an announcement. Discovering the mistake afterward does
+not erase effects already observed by someone else.
+
+A speculation provides a private attempt: xbegin starts it, xcommit publishes
+accepted changes, and xabort discards the attempt. Inside readers see private
+changes; outside readers see the old view. Console/external-pipe output is held.
+The barrier does not detect prompt injection or decide whether work is good.
+If a compromised worker can authorize its own commit, bad work may still be
+published. A trusted coordinator/reviewer is a stronger future arrangement.
+Host-side effects outside xv6 cannot be contained by xv6 kernel barriers.
+Console release follows filesystem durability; it is not literally the same
+atomic operation as writing a filesystem transaction.
+
+Later agent discussion:
+- Explained agent.py, test_agent.py, README.md, generated logs and cache;
+  described rule planning, validation, execution, observations and cleanup.
+- Explained interactive, single-request, baseline and scripted-injection modes.
+- Added a separate Gemini REST adapter and bounded LLM loop with read-only
+  defaults and an explicit disposable-effect mode. Fifteen offline tests and
+  a simulated-model/real-guest path were verified; a live API was not verified.
+- Discussed OpenRouter free models with tool support. No OpenRouter adapter was
+  implemented. The user postponed AI activation to concentrate on the kernel.
+
+
+BEFORE STEP 2: STEP 1, SEMANTICS AND LIMITS
+==========================================
+
+1. Confirming the implementation modules
+-----------------------------------------
+User:
+"alright lets go ahead and start the project now. I will handle distribution
+of the work amongst my team members myself. From my understanding, we have to
+add the system calls, set up speculation id and fork inheritance(where we will
+add int spec to struct proc; children inherit speculation IDs.), do the shadow
+block management, speculative file reads/writes(Redirect speculative writes
+to shadow blocks; speculative reads see private changes, normal reads see
+original data.), commit and abort, console buffering, pipe buffering,
+create/deletion isolation,conflict detection, performance graphs. Dont make
+any changes now. just verify if this is mostly all the modules that have to
+be done. we will then talk furthur."
+
+Assistant explanation:
+That covers the main modules. Also explicitly plan lifecycle cleanup,
+concurrency/locking, log capacity, correctness tests and failure handling.
+Filesystem isolation must include cached inode state, allocation metadata and
+directories, not only file data. The handout identifies nested begin, crash
+during commit and shadow exhaustion as important tests. Submission evidence
+includes raw logs, a design journal, a genuine GDB debugging session, graphs,
+documented limitations and the required report/archive.
+
+2. Implementation order
+-------------------------
+User:
+"Alright. Then tell me which modules need to be implemented first."
+
+Assistant plan:
+1. Define foundational semantics and limits.
+2. Add syscalls, shared contexts and lifecycle/fork inheritance.
+3. Implement shadow-block storage, lookup, locking and cleanup.
+4. Integrate isolated reads/writes to existing files; address cached state.
+5. Complete abort, then implement one-transaction durable commit.
+6. Add extension/create/delete and allocation/metadata isolation.
+7. Buffer console output; release only after filesystem durability.
+8. Handle internal versus external pipe readers.
+9. Complete conflict handling and broader concurrency tests.
+10. Run failure tests, performance measurements and graphs.
+
+Tests accompany every stage. The first filesystem milestone is: private write,
+outside reader sees original, abort preserves original, and a separate commit
+run publishes changes. Locking is needed from the start, not only in Step 9.
+
+3. What membership, IDs and nesting mean
+-----------------------------------------
+User:
+"I will define the the semantics and limits but befre that i want you to
+answer a few questions related to it one by one. 1) what is meant by a process
+being part of a speculation? what is a speculation id: by a spec id do we mean
+process id of each process that is speculative or are we saying there are a
+fixed number of types of speculation and this particular process is part of
+one of these speculations(if yes, then what is the range of spec ids)? what is
+meant by nested xbegin()? does it mean creating a child process of a
+speculative process or does it mean something else? tell me in simple words"
+
+Assistant explanation:
+A speculation is a temporary attempt whose effects remain private until
+commit or are discarded on abort. Multiple processes can share the attempt.
+The speculation ID identifies that attempt, not an individual process or a
+type. For example, PIDs 12 and 13 can share spec ID 7, another process can have
+spec 0 (ordinary), and an independent attempt can have ID 8.
+
+A fixed context-table capacity limits simultaneous attempts; it does not
+necessarily determine the ID range. Slot-based IDs or generated IDs are both
+possible. Reuse must not leave old references pointing to a new attempt.
+
+Nested begin means calling xbegin while already speculative. Fork does not
+create a nested attempt: it adds a member to the existing one. A forked child
+that calls xbegin is requesting nesting because it inherited membership.
+True nesting needs rules for inner commit/abort and additional bookkeeping.
+
+User:
+"so calling xbegin() once inside a process means it is part of one
+speculaition. but calling xbegin() a second time would be an attempt at making
+it part of 2 different speculation attempts correct?"
+
+Assistant explanation:
+More precisely, it requests an inner attempt inside an unfinished outer one,
+not two unrelated attempts. xbegin -> xcommit -> xbegin is a new separate
+attempt, not nesting. A single int spec identifies one current context; true
+nesting requires additional state.
+
+4. Rejecting nesting in iteration 1
+------------------------------------
+User:
+"okay for the first iteration of the project, lets not allow nested iteration
+as i believe that will add a good amount of complexity to the shadow block
+implementation am i right? because somewhere, we might have to create furthur
+shadow blocks to pre-existing shadow blocks correct?"
+
+Assistant explanation:
+Yes. Consider original A, outer writes B, inner writes C. Inner abort must
+restore B; outer abort must restore A. Shadowing a shadow is one approach,
+but version histories or undo records are alternatives. All add complexity.
+
+Decision:
+- xbegin while ordinary starts a new attempt.
+- xbegin while already speculative returns -1, leaving the current context,
+  ID and private changes unchanged, including in an inherited child.
+
+5. Shared speculation
+-----------------------
+User:
+"okay next question: 2) what is a shared speculation? it is just a collection
+of processes part of a single speculation correct?"
+
+Assistant explanation:
+Yes, and they share more than the ID: private filesystem changes, held output
+and one commit/abort outcome. If one member modifies a file, another member
+should see that modification. Outside readers still see the original.
+The shared kernel context owns resources for the whole attempt; individual
+processes merely carry the association.
+
+6. Who can end the shared attempt?
+-----------------------------------
+User:
+"Who can commit or abort a shared speculation. what is the importance of this?
+like who can i allow to commit or abort and what design changes will it create?"
+
+Assistant explanation:
+Commit and abort affect the entire group. A worker committing before another
+worker finishes checking can publish too early. A worker aborting discards
+everyone's work. The discussed options were:
+
+A. Creator-only commit and abort: clear coordinator ownership, simple tests.
+   Children report errors to the creator. Requires owner-death cleanup.
+B. Creator-only commit, any-member abort: a worker can cancel bad work promptly,
+   but cancellation must safely coordinate all members and their operations.
+C. Any-member commit/abort: flexible but allows workers to publish prematurely
+   and requires arbitration between competing commit/abort requests.
+
+Permission and timing are distinct. Even an authorized owner needs a rule for
+active children. For iteration 1, require the owner to be the sole living
+participant; otherwise return -1 without waiting or changing anything.
+Count all descendants sharing the ID, not only direct children. Waiting for
+direct children does not prove all grandchildren have exited.
+
+An owner is not automatically trustworthy; a later security arrangement could
+use a trusted owner/coordinator with potentially influenced child workers.
+
+User's decision:
+"I think allowing only the creator to commit and any member to abort is the
+one that makes most sense to me. but for the first iteration lets use your
+suggestions: - Owner = process that successfully calls xbegin().
+- Only the owner may explicitly commit or abort.
+- Require the owner to be the sole remaining participant before either operation.
+- Children leave the speculation when they exit; their speculative changes
+remain in the shared context."
+
+Accepted rules:
+- Successful xbegin makes its caller the owner.
+- Fork inherits membership; it does not transfer ownership.
+- Non-owner commit/abort returns -1 unchanged.
+- Owner completion with live peers returns -1 unchanged.
+- Children detach after exit cleanup; their work remains shared.
+- A detached zombie does not count even before wait reaps it.
+- Successful completion returns the owner to ordinary execution.
+- Any-member abort is a possible future extension, not iteration-1 policy.
+
+7. Exit, owner death, and completion coordination
+-------------------------------------------------
+User:
+"what is your suggestion for the same? also, answering this question
+automatically answers the next 2 design questions right(- What happens when
+participating processes exit.
+- How commit waits for or stops other participating processes.
+)? if not tell me what your suggestions for them are and what other options
+i have for them are"
+
+Assistant explanation and recommendation:
+If the owner exits or is killed, automatically cancel, never commit:
+1. Mark the context ABORTING.
+2. Reject new speculative work/admission.
+3. Mark remaining members killed and wake sleeping members.
+4. Let members finish safe in-progress/exit cleanup and detach.
+5. Reclaim storage only when no member or in-flight reference can access it.
+
+Do not immediately free pages while children may still use them. Do not clear
+living workers' IDs and let them continue with ordinary public writes. Killing
+is cooperative, not an instant stop. Kernel-triggered cancellation is cleanup,
+not a non-owner successfully invoking the explicit xabort syscall.
+
+Other owner-death options:
+- Let children finish a doomed attempt, then discard: less immediate termination
+  but a stuck child can retain resources indefinitely.
+- Transfer ownership: preserves progress but adds succession/permission rules.
+
+Ordinary non-owner exit or kill:
+- Keep the speculation association through relevant file/cwd cleanup.
+- Detach afterward; retain shared changes and held output.
+- Do not automatically cancel merely because one worker exits/is killed.
+Alternative: abort on any failed/killed worker, but that requires clear failure
+semantics and more cancellation paths. The x86 tree lacks newer exit statuses.
+
+Explicit commit/abort:
+- It neither waits nor stops members; return -1 when peers remain.
+- Owner coordinates completion and retries once alone.
+- Alternative blocking commit can deadlock if children wait for the owner.
+- Freezing members raises difficult unfinished-operation/resume questions.
+- Synchronize the membership check and state transition.
+
+These are three related decisions, not one automatic consequence. Together,
+the recommendation answers all three. A process stuck in a kernel path can
+still delay final reclamation; never promise instant cancellation.
+
+User's acceptance and next request:
+"alright lets keep your recommended decisions for these then. also make a
+spreadsheet constaining all the design questions and their solutions(action
+or sequence of actions) we decided upon as of now. After this we will only be
+left to answer the last question: - Maximum shadow capacity and transaction
+size. tell me your recommended and other options and their differences"
+
+8. Shadow capacity and transaction size
+----------------------------------------
+Assistant explanation:
+Shadow capacity counts distinct blocks modified privately. Transaction size
+counts changed blocks published together through the log. Repeated changes
+to one block reuse an entry. Both limits must agree for one atomic commit.
+
+The actual x86 tree has BSIZE=512, MAXOPBLOCKS=10, LOGSIZE=30 and NBUF=30.
+The disk log also contains a header; nominal log size is not all payload.
+Metadata (inodes, directories, bitmaps, indirect blocks) counts too.
+
+Recommended first working configuration:
+- Eight writable shadow blocks per speculation, including metadata.
+- One filesystem-log transaction covering at most eight distinct home blocks.
+- Four KiB of block contents; actual file payload may be less.
+- Count capacity before unsupported growth, never spill private writes to disk.
+- Log reservation/durability still require explicit coordination: ordinary
+  end_op may return while another operation keeps a grouped transaction open.
+
+Other options and differences:
+- Small fixed cap: easiest core and exhaustion tests, small workloads only.
+- Larger cap plus larger log/cache: larger atomic attempts, coordinated
+  reservation/cache/header/on-disk layout changes needed.
+- Multiple commit transactions: larger writes but loses whole-attempt crash
+  atomicity; not the chosen approach.
+- Dynamic allocation: memory on demand, but allocation/cleanup can fail and
+  transaction size still limits what can be committed atomically.
+
+Discussed later candidate: 64 blocks = 32 KiB of block contents in this tree,
+not 64 KiB. A successful 64 KiB file change needs more than 128 blocks when
+metadata is included, and a more substantial log design. The required 1-64 KiB
+graph should show capacity failures honestly rather than crop the cliff.
+
+User:
+"for these 5 design questions in the spread sheet: - Whether nested xbegin()
+is rejected.
+- Who can commit or abort a shared speculation.
+- What happens when participating processes exit.
+- How commit waits for or stops other participating processes.
+- Maximum shadow capacity and transaction size., inside their respective
+Design question row, dont use the statement u are using, rather use the exact
+question u pasted here. for xample, instead of Explicit commit permission, use:
+Who can commit or abort a shared speculation"
+
+Outcome: updated the relevant Design question cells to the exact five labels.
+Separate rows retain the detailed consequences without hiding undecided items.
+
+User:
+"for the first working iteration, i will take your recommendation. but i do
+want to move to the larger cap with larger log/cache. that will be independent
+of the other components right?"
+
+Assistant explanation:
+Mostly configurable, not entirely independent. Keep capacities in constants
+and avoid hardcoding eight. A larger cap needs larger shadow storage, compatible
+log reservation/space/header limits, cache headroom for pinned/work buffers,
+filesystem-image regeneration and repeated boundary/crash/concurrency tests.
+Syscalls, ownership, fork inheritance and no-nesting rules can stay unchanged.
+Console/pipe policies still wait for actual durable completion. Raising only
+the shadow constant is insufficient.
+
+User:
+"okay then update the spreadsheet then i will tell you the next step"
+
+Outcome: accepted eight writable blocks and one eight-block-footprint transaction
+for iteration 1; recorded a larger coordinated log/cache configuration as a
+planned upgrade. Exact upgraded sizes remain undecided. Other component-level
+questions (conflict policy, output limits, detailed failure behavior) remain
+open; the five foundational Step-1 questions are answered at policy level.
+
+9. Step-2 handoff and implementation boundary
+---------------------------------------------
+User asked for summary.pdf to hand to the teammate implementing Step 2, with
+all ten implementation stages, Step 1 marked complete, and remaining details
+to be settled component by component. Git remote details were to be excluded.
+
+User:
+"also give the detail of the things that need to be done in step 2 that my
+team can tell thier codex to do once theier codex has gone through the
+summary.pdf. once they have done it and pushed to the actual repo, i will pull
+from the actual repo, implement step 3 nd then push to both my mirror as well
+as to the actual repo."
+
+Assistant handoff covered:
+- Inspect actual x86 process/syscall paths and preserve add/hello.
+- Wire xbegin/xcommit/xabort through user.h, usys.S, syscall numbers/dispatch,
+  sysproc handlers and kernel helpers.
+- Proposed successful return 0, failure -1, spec=0 ordinary, eight active
+  contexts and exec preserving membership; document details selected.
+- Shared contexts with identity, owner, state, membership/references and locks.
+- Initialize proc.spec, safe slot/identity reuse and failed allocation cleanup.
+- Fork membership before runnable publication; reject cancelled admission.
+- Owner-only explicit completion, alone and without outstanding resource users.
+- Ordinary exit detachment versus group cancellation on owner death.
+- Deterministic pipe-handshake tests, one/multiple CPUs and baseline regressions.
+- Safe pin/unpin API and a Step-3 integration note; no unprotected raw pointers.
+- Lifecycle only: no real filesystem isolation, shadowing or durable commit yet.
+
+Implementation boundary:
+The teammate implemented Step 2 as commit 487e025. It selected eight contexts,
+generated positive IDs, syscall numbers 24-26, 0/-1 returns and exec inheritance.
+Added context references/resource hooks, spectest and the implementation note.
+The later source review explained all 12 changed/added files and each lifecycle
+path. The Step-2 note reports test results; Step 3 independently reran them.
+
+
+BEFORE STEP 3: SHADOW-STORAGE DESIGN QUESTIONS
+==============================================
+
+1. Scope of Step 3 and what comes later
+----------------------------------------
+User:
+"alright then lets start step 3. before that list down what we are going to
+do for step 3 like you did for step 2.also list down the things we will be
+doing later for the shadow blocks"
+
+Assistant plan:
+Step 3 supplies safe private kernel block storage, not automatic filesystem
+redirection. Build on contexts, resource_lock and pins:
+1. Define entries identifying a device/block and private 512-byte contents.
+2. Attach dynamic or pooled storage, respect capacity and handle failures.
+3. Implement lookup distinguishing absent from cancelled/error.
+4. Initialize the first private write without sleeping under a spinlock or
+   creating duplicate entries concurrently.
+5. Provide protected copying/update access, shared within a context and
+   separate across contexts; avoid unsafe escaping entry pointers.
+6. Enforce eight distinct writable blocks and leave state valid on failure.
+7. Add safe discard/cancellation/reclamation. Nonempty commit must not report
+   success without real publication; gate it until Step 5.
+8. Test initialization, original preservation, reuse/capacity, shared/separate
+   contexts, concurrency, cancellation and memory/context reuse.
+
+Later work: Step 4 filesystem routing/cached inode views; Step 5 full abort and
+durable commit; Step 6 allocation/extension/create/delete metadata; Step 9
+outside-writer conflicts; Step 10 crashes and performance. Console/pipe buffers
+are separate resources. Raising capacity must coordinate the log and cache.
+
+2. What is an entry? What does allocated mean?
+-----------------------------------------------
+User:
+"before we get started answer a few questions please. Firstly, what do you
+mean by the word entry? what is meant by an entry being allocated?"
+
+Assistant explanation:
+An entry is one record in the shadow table: one private version of one original
+filesystem block. For example:
+
+  Speculation 7
+    Entry 0: original block 42 -> private contents
+    Entry 1: original block 90 -> private contents
+    Entry 2: unused
+
+Allocating an entry means assigning an available record to a block, recording
+its identity, initializing its contents and marking it in use. Repeated writes
+to block 42 reuse that entry; block 90 requires another. Safe final cleanup
+releases entries for reuse. In a fixed table the memory may already exist:
+allocating a slot does not necessarily request new physical memory.
+
+3. Context, resource pointer, pool and allocated memory
+--------------------------------------------------------
+User:
+"what is meant by context? and what is resources pointer? Also please tell
+me what is fixed pool and what is allocated memory"
+
+Assistant explanation:
+A context is the kernel's shared record for an attempt. Parent and children
+carry spec=7 and point conceptually to the same record of owner, state,
+membership, references and resources.
+
+A pointer stores an address. The field void *resources stores the address of
+private storage; it does not contain all blocks or automatically allocate them.
+Zero means no attached resources. void * does not specify the target's type;
+the managing module interprets the pointed-to structure.
+
+A fixed pool reserves storage sets beforehand. A speculation takes an available
+set and returns it after cleanup. Memory usage/limits are predictable and
+allocation is simple, but reserved memory cannot serve other uses while idle
+and the pool cannot grow beyond its configured size.
+
+Dynamic allocation requests memory when needed and returns it after use.
+It can avoid reserving the maximum beforehand, but allocation may fail and
+partial initialization needs cleanup. xv6 kalloc supplies 4096-byte pages.
+Eight 512-byte contents alone use one page; bookkeeping means the full set
+cannot simply fit into that same page without a different layout.
+
+Connection between terms:
+  process spec ID -> context -> resources pointer -> storage -> entries
+
+Entry allocation (assign a block to a record) and physical memory allocation
+are distinct operations even when related.
+
+4. Would dynamic allocation make later growth easier?
+-------------------------------------------------------
+User:
+"I think dynamic allocation is better if we later want to expand to perhaps
+non-fixed for speculations correct/"
+
+Assistant explanation:
+Yes for shadow storage that grows on demand. Distinguish blocks per attempt
+from simultaneous attempts: dynamic blocks do not remove NSPEC=8, the fixed
+context-table limit. We can dynamically allocate while enforcing eight blocks
+initially and later increase the cap. Dynamic does not mean unlimited: memory
+and one-transaction log limits still apply. Removing only the shadow cap could
+produce work the log cannot publish atomically.
+
+5. Choice accepted, and first-write allocation explained
+---------------------------------------------------------
+User:
+"Alright then lets keep dynamic allocation with a fixed eight block storage
+and later raise the cap without replacing the storage design and also, since
+we are using pointers for storing the entry pointers in the context, i dont
+think extending later should be a problem. add this design decision to the
+spreadsheet use easy language to depict the question of choosing pool vs
+dynamic allocation. Then answer my next question: can you explain the 4th
+sub-part in simple words?"
+
+Outcome: recorded the plain-language pool-versus-dynamic question and accepted
+dynamic storage with an initial eight-writable-block cap. Clarified that the
+context has one resources pointer, not an already implemented array of entry
+pointers. An extensible target layout helps future growth, but the log/cache
+must still support larger transactions.
+
+Assistant's first-write example:
+  Original block 42: Hello
+  Desired private version for speculation 7: World
+
+Keep the context alive with a pin. Check for an existing shadow and reuse it.
+If absent, check capacity and prepare private contents from the original.
+Install the copy safely and apply the change only there. The original remains
+Hello. First-copy must handle competing members and cancellation safely.
+
+Reading original data may sleep for disk I/O. Do not retain a spinlock during
+that work. Release it before potentially sleeping work, then recheck/finalize
+under the lock. At this point the reserve-versus-recheck strategy was still
+being discussed.
+
+6. Which spinlock, and how do races relate to sleeping?
+--------------------------------------------------------
+User:
+"which spinlock are we referrin to and what is it protecting? are we talking
+about the lock that is protecting the table of contexts in the karnel? if yes,
+how can there be a race condn where a spinlock is being held while sleeping"
+
+Assistant explanation:
+There are two relevant spinlocks:
+- ptable.lock protects process membership and context lifecycle metadata:
+  owner, state, reference count and membership.
+- Each context's resource_lock protects its private resource bookkeeping,
+  including shadow entries. The first-copy discussion mainly meant this lock.
+
+The race and the sleeping problem are different. Releasing resource_lock
+before disk I/O permits:
+
+  Process A: lock, see no shadow for block 42, unlock, start reading disk.
+  Process B: lock, also see no shadow for block 42, unlock, prepare another copy.
+
+Both could install separate entries for one block unless we reserve before
+unlocking or recheck when publishing.
+
+Keeping the spinlock through the read is not the solution: a disk read can
+sleep, while another CPU spins waiting for the lock. A dependency on that lock
+can deadlock, and spinlocks disable local interrupts in xv6.
+
+The usual pattern is lock -> inspect/reserve -> unlock -> potentially sleeping
+work -> lock -> recheck/finalize -> unlock.
+
+xv6 sleep(channel, lock) is a special handoff: it releases the supplied lock
+before actually sleeping and reacquires it on return. A disk function does not
+automatically release an unrelated resource_lock held by its caller.
+
+7. Reserving before unlocking
+-------------------------------
+User:
+"what implementation startegy do u suggest? i think reserving an entry
+before unlocking is good"
+
+Assistant recommendation:
+Reserve before unlocking, with entry states:
+
+  FREE -> LOADING -> READY
+
+FREE is unused, LOADING is reserved but uninitialized, READY permits access.
+Pin the context, lock resources and look up the block. Use READY, wait/retry
+for LOADING, or reserve a missing entry after checking the cap. Unlock for
+allocation/I/O, then relock to publish READY or release failed initialization.
+Wake waiters and release references safely. Waiters recheck entry and context
+after waking. LOADING reservations count toward the eight-entry cap.
+
+Example:
+  A reserves block 42 as LOADING, unlocks and prepares its copy.
+  B sees LOADING and waits, releasing the resource lock while asleep.
+  A marks READY and wakes B.
+  B retries and uses the same private entry.
+
+The reservation itself needs stable storage. A dynamic resource structure or
+another safe record layout is needed before publishing the reservation; exact
+page layout was left to implementation. This handles duplicate initialization,
+not conflicts with outside processes modifying the original block.
+
+8. Record the strategy, example and locks; await permission
+------------------------------------------------------------
+User:
+"also add this to the design decisions in simple words. also, mention why it
+is needed(giving the race condition example). If needed add a new cell to
+explain this using the same example you gave me.also mention the 2 tyoes of
+spinlocks. tell me once you have done that and then when i give the signal
+start implementing step 3"
+
+Outcome: added spreadsheet rows D16-D19 for reservation, the block-42 race,
+both spinlocks, and safe waiting/rechecking. The dynamic-storage decision is
+D15. Both XLSX and CSV were updated. No implementation began at that point.
+
+Implementation authorization:
+"start implementing step 3 now"
+
+
+POST-IMPLEMENTATION CLARIFICATIONS AND CURRENT BOUNDARY
+======================================================
+Step 3 is now implemented locally. These are implementation details, not
+additional statements that were agreed before coding:
+
+- Linked entries are dynamically allocated, one kalloc page per entry.
+  The page holds metadata and data. An unlinked entry is implicitly FREE.
+- A candidate page is allocated before attachment, outside spinlocks; the
+  list/cap are rechecked and exactly one LOADING reservation is attached before
+  reading disk. Competing unused candidates are released. This realizes the
+  reserve-before-I/O strategy without needing a fixed eight-slot array.
+- Eight attached pages consume 32 KiB of allocation but contain 4 KiB of block
+  data. Temporary candidate pages can increase peak memory. Raising the cap
+  does not require replacing the linked-storage design.
+- The normal filesystem still bypasses shadows; the API is kernel copy-based.
+- A cancellation-aware spec_wait follows xv6's sleep handoff. The brief
+  resource_lock -> ptable.lock handoff is a deliberate exception to informal
+  'never nest' wording. No reverse acquisition is allowed. It atomically
+  checks cancellation before sleep, avoiding kill-before-sleep hangs.
+- Final reclamation retains a reference while freeing outside ptable.lock.
+- Nonempty xcommit returns -1, retaining private work for abort; real durable
+  commit is not implemented. Explicit abort and owner-death cleanup free pages.
+- A test-only syscall exists only in SHADOW_TEST=1 builds. Normal builds do
+  not expose it. Tests, raw logs and limitations are in the Step-3 notes.
+- Verified shadow/lifecycle tests on 1 CPU and five shadow cycles on 3 CPUs;
+  normal lifecycle/example tests on 3 CPUs, full usertests on 1 CPU, and all
+  15 Python agent tests. Final images were restored to normal mode.
+
+Next stage: discuss Step-4 filesystem routing, original-cache access and cached
+inode/shared-descriptor semantics before implementation. Full commit, file
+creation/deletion, output buffering, conflicts and performance remain later work.
